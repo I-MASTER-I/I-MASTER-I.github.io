@@ -39,14 +39,15 @@ jobs:
       # 3. Build Portfolio Projects
       #
       # GitHub Pages 배포를 위해 실제 빌드가 필요한
-      # 프로젝트만 명시적으로 관리합니다.
+      # Next.js 프로젝트만 명시적으로 관리합니다.
       #
-      # 중요:
-      # - Portfolio 전체 package.json 자동 탐색 금지
-      # - 천류관 등 Static 프로젝트는 빌드하지 않음
+      # Build Projects
+      # - Portfolio/study/ai
+      # - Portfolio/study/cs
+      # - Portfolio/kms
       #
       # 신규 Build 프로젝트 추가 시
-      # BUILD_PROJECTS 배열에 경로만 추가합니다.
+      # BUILD_PROJECTS 배열에 경로를 추가합니다.
       # ==================================================
       - name: Build Portfolio Projects
         shell: bash
@@ -56,6 +57,7 @@ jobs:
           BUILD_PROJECTS=(
             "Portfolio/study/ai"
             "Portfolio/study/cs"
+            "Portfolio/kms"
           )
 
           echo "=========================================="
@@ -104,6 +106,9 @@ jobs:
 
             # ------------------------------------------
             # Dependencies
+            #
+            # package-lock.json 존재 시 npm ci
+            # 없으면 npm install
             # ------------------------------------------
             if [ -f "package-lock.json" ]; then
               echo "[INSTALL] npm ci"
@@ -116,13 +121,36 @@ jobs:
             # ------------------------------------------
             # GitHub Pages Base Path
             #
-            # 예:
             # Portfolio/study/ai
-            # → /Portfolio/study/ai
+            # -> /Portfolio/study/ai
+            #
+            # Portfolio/study/cs
+            # -> /Portfolio/study/cs
+            #
+            # Portfolio/kms
+            # -> /Portfolio/kms
             # ------------------------------------------
             BASE_PATH="/${project}"
 
             echo "[INFO] BasePath: $BASE_PATH"
+
+            # ------------------------------------------
+            # Optional Content Validation
+            #
+            # validate script가 존재하는 프로젝트만 실행
+            # KMS의 Markdown content 검증에도 사용됩니다.
+            # ------------------------------------------
+            if node -e '
+              const p = require("./package.json");
+              process.exit(
+                p.scripts && p.scripts.validate ? 0 : 1
+              );
+            '; then
+              echo "[VALIDATE] npm run validate"
+              npm run validate
+            else
+              echo "[INFO] validate script not defined."
+            fi
 
             # ------------------------------------------
             # Build
@@ -146,6 +174,18 @@ jobs:
               exit 1
             fi
 
+            # ------------------------------------------
+            # index.html 확인
+            # ------------------------------------------
+            if [ ! -f "out/index.html" ]; then
+              echo ""
+              echo "[ERROR] out/index.html was not created."
+              echo "Project: $project"
+              echo ""
+              popd > /dev/null
+              exit 1
+            fi
+
             popd > /dev/null
 
             echo "[SUCCESS] Build completed: $project"
@@ -160,10 +200,8 @@ jobs:
       # ==================================================
       # 5. Build Existing Jekyll Blog
       #
-      # 기존 _config.yml 정책에 따라 Jekyll 본체를
-      # _site 디렉터리에 빌드합니다.
-      #
-      # Portfolio는 이후 별도로 원본을 복사합니다.
+      # 기존 Git Blog을 _site에 빌드합니다.
+      # Portfolio 프로젝트는 이후 별도로 병합합니다.
       # ==================================================
       - name: Build Jekyll Blog
         uses: actions/jekyll-build-pages@v1
@@ -173,9 +211,6 @@ jobs:
 
       # ==================================================
       # 6. Prepare Final Site
-      #
-      # 최종 GitHub Pages artifact를 만들기 위한
-      # writable 디렉터리를 생성합니다.
       # ==================================================
       - name: Prepare Final Site
         shell: bash
@@ -201,13 +236,12 @@ jobs:
       # ==================================================
       # 7. Copy Static Portfolio
       #
-      # Portfolio는 기본적으로 STATIC 프로젝트로
-      # 취급합니다.
+      # Portfolio 전체를 우선 Static Source로 복사합니다.
       #
-      # 천류관을 포함한 기존 HTML/JS/CSS 프로젝트는
-      # 원본 디렉터리 구조를 그대로 유지합니다.
+      # Build 프로젝트의 source는 이후
+      # out/ 결과물로 교체됩니다.
       #
-      # 빌드 산출물 및 dependency는 제외합니다.
+      # node_modules / .next / out 등은 제외합니다.
       # ==================================================
       - name: Copy Static Portfolio
         shell: bash
@@ -246,18 +280,12 @@ jobs:
       # ==================================================
       # 8. Merge Built Portfolio Projects
       #
-      # BUILD_PROJECTS에 등록된 프로젝트만
-      # source 대신 out/ 결과로 교체합니다.
+      # Build 대상 프로젝트의 Source Directory를 제거하고
+      # Next.js out/ 결과물로 교체합니다.
       #
-      # 예:
-      #
-      # Portfolio/study/ai/out/
+      # Portfolio/kms/out/
       #       ↓
-      # _final_site/Portfolio/study/ai/
-      #
-      # Portfolio/study/cs/out/
-      #       ↓
-      # _final_site/Portfolio/study/cs/
+      # _final_site/Portfolio/kms/
       # ==================================================
       - name: Merge Built Portfolio Projects
         shell: bash
@@ -267,6 +295,7 @@ jobs:
           BUILD_PROJECTS=(
             "Portfolio/study/ai"
             "Portfolio/study/cs"
+            "Portfolio/kms"
           )
 
           echo "=========================================="
@@ -289,10 +318,20 @@ jobs:
               exit 1
             fi
 
+            if [ ! -f "$OUTPUT_DIR/index.html" ]; then
+              echo "[ERROR] Build index missing:"
+              echo "$OUTPUT_DIR/index.html"
+              exit 1
+            fi
+
             # ------------------------------------------
-            # Static source를 Build 결과로 교체
+            # Static Source 제거
             # ------------------------------------------
             rm -rf "$TARGET_DIR"
+
+            # ------------------------------------------
+            # Build 결과 배치
+            # ------------------------------------------
             mkdir -p "$TARGET_DIR"
 
             cp -a "$OUTPUT_DIR"/. "$TARGET_DIR"/
@@ -303,8 +342,8 @@ jobs:
       # ==================================================
       # 9. Validate Final Site
       #
-      # 핵심 서비스가 최종 artifact에서 누락되면
-      # 배포하지 않고 Build 자체를 실패시킵니다.
+      # 핵심 서비스가 최종 Artifact에서 누락되면
+      # Deploy 전에 Build를 실패시킵니다.
       # ==================================================
       - name: Validate Final Site
         shell: bash
@@ -321,13 +360,14 @@ jobs:
           fi
 
           # ------------------------------------------
-          # 반드시 존재해야 하는 파일
+          # 반드시 존재해야 하는 index.html
           # ------------------------------------------
           REQUIRED_FILES=(
             "_final_site/index.html"
             "_final_site/Portfolio/Game/Cheonryugwan-Archive/index.html"
             "_final_site/Portfolio/study/ai/index.html"
             "_final_site/Portfolio/study/cs/index.html"
+            "_final_site/Portfolio/kms/index.html"
           )
 
           echo ""
@@ -343,6 +383,40 @@ jobs:
 
             echo "[OK] $file"
           done
+
+          # ------------------------------------------
+          # KMS Build 결과 확인
+          # ------------------------------------------
+          KMS_ROOT="_final_site/Portfolio/kms"
+
+          echo ""
+          echo "[CHECK] KMS Career Portfolio"
+          echo ""
+
+          if [ ! -d "$KMS_ROOT" ]; then
+            echo "[ERROR] KMS directory missing:"
+            echo "$KMS_ROOT"
+            exit 1
+          fi
+
+          if [ ! -f "$KMS_ROOT/index.html" ]; then
+            echo "[ERROR] KMS index.html missing."
+            exit 1
+          fi
+
+          echo "[OK] $KMS_ROOT"
+          echo "[OK] $KMS_ROOT/index.html"
+
+          # ------------------------------------------
+          # Next.js Static Assets 확인
+          # ------------------------------------------
+          if [ ! -d "$KMS_ROOT/_next" ]; then
+            echo "[ERROR] KMS Next.js static assets missing:"
+            echo "$KMS_ROOT/_next"
+            exit 1
+          fi
+
+          echo "[OK] $KMS_ROOT/_next"
 
           # ------------------------------------------
           # 천류관 주요 디렉터리 확인
