@@ -1,0 +1,5 @@
+"use client";
+import {useState} from "react";
+import MarkdownDetailModal,{MarkdownModalDocument} from "@/components/content/MarkdownDetailModal";
+type Item={slug:string;title:string;institution:string;startDate:string;endDate:string;skills:string[];markdown:string};
+export default function TrainingModalList({items}:{items:Item[]}){const [active,setActive]=useState<MarkdownModalDocument|null>(null);const open=(p:Item)=>setActive({slug:p.slug,title:p.title,subtitle:p.institution,period:[p.startDate,p.endDate].filter(Boolean).join(" — "),markdown:p.markdown,sourceLabel:"TRAINING / MARKDOWN"});return <><div className="recordList projectModalList">{items.map((p,i)=><button type="button" className="recordRow projectModalRow" key={p.slug} onClick={()=>open(p)}><span>{String(i+1).padStart(3,"0")}</span><strong>{p.institution} · {p.title}</strong><small>{p.skills.slice(0,4).join(" / ")}</small><time>{p.startDate}</time><b>＋</b></button>)}</div><MarkdownDetailModal item={active} closeLabel="ESC TO CLOSE" detailLabel="" onClose={()=>setActive(null)}/></>}

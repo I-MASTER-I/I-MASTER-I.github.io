@@ -1,0 +1,3 @@
+import {notFound} from "next/navigation";import {getAreaConfig,getDocument,getDocuments} from "@/lib/content";import MarkdownView from "@/components/content/MarkdownView";export function generateStaticParams(){return getDocuments("career").map(doc=>({slug:doc.slug}));}
+
+export default async function Page({params}:{params:Promise<{slug:string}>}){const {slug}=await params,doc=getDocument("career",slug),area=getAreaConfig("02_CAREER");if(!doc)notFound();return <section className="section detail"><p className="eyebrow">{String(area.detailEyebrow||"")}</p><h1>{String(doc.meta.company||doc.meta.title||"")}</h1><p className="lead">{String(doc.meta.position||"")}</p><MarkdownView content={doc.content}/></section>}
